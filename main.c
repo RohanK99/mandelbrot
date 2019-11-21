@@ -10,15 +10,29 @@
 #include "mandelbrot_sse.h"
 #include "mandelbrot_avx.h"
 
-const int width = 1440;
-const int height = 1080;
+typedef struct Bounds {
+    double min_x;
+    double max_x;
+    double min_y;
+    double max_y;
+} Bounds_t;
+
+typedef double coord_t;
+
+typedef enum ZoomDir {
+    ZOOM_IN = 0,
+    ZOOM_OUT
+} ZoomDir_t;
+
+static Bounds_t bounds = { -2, 2, -2, 2 };
+
+int width = 800;
+int height = 800;
 const int max_iter = 50;
-double min_x;
-double max_x;
-double min_y;
-double max_y;
 double x_factor;
 double y_factor;
+
+long double factor = 1;
 
 enum instruction_set {
     def,
@@ -72,7 +86,7 @@ is_avx_supported(void)
 }
 #endif // __x86_64__
 
-void mandelbrot_driver(int* color_arr, int i_set) {
+void mandelbrot_driver(Bounds_t *bounds, int* color_arr, int i_set) {
     __m256d _3210 = _mm256_set_pd(3.0, 2.0, 1.0, 0.0);
     __m256d _4    = _mm256_set1_pd(4.0);
 
@@ -82,15 +96,15 @@ void mandelbrot_driver(int* color_arr, int i_set) {
         #pragma openmp parallel for schedule(guided)
         for (int y = 0; y < height; ++y) {
             __m256d vy = _mm256_set1_pd((double)y);
-            __m256d cvy = map_avx(vy, y_factor, min_y);
+            __m256d cvy = map_avx(vy, y_factor, bounds->min_y);
             __m256d cy[4] = {cvy, cvy, cvy, cvy};
             for (int x = 0; x < width; x += 16) {
                 __m256d vx0 = _mm256_add_pd(_3210, _mm256_set1_pd((double)x));
                 __m256d vx1 = _mm256_add_pd(_4, vx0);
                 __m256d vx2 = _mm256_add_pd(_4, vx1);
                 __m256d vx3 = _mm256_add_pd(_4, vx2);
-                __m256d cx[4] = {map_avx(vx0, x_factor, min_x), map_avx(vx1, x_factor, min_x),
-                                    map_avx(vx2, x_factor, min_x), map_avx(vx3, x_factor, min_x)};
+                __m256d cx[4] = {map_avx(vx0, x_factor, bounds->min_x), map_avx(vx1, x_factor, bounds->min_x),
+                                    map_avx(vx2, x_factor, bounds->min_x), map_avx(vx3, x_factor, bounds->min_x)};
 
                 union _256d_4 res = {_mm256_setzero_pd(), _mm256_setzero_pd(), _mm256_setzero_pd(), _mm256_setzero_pd()};
                 mandelbrot_avx(cx, cy, max_iter, res.v);
@@ -107,11 +121,11 @@ void mandelbrot_driver(int* color_arr, int i_set) {
         for (int iy = 0; iy < height; ++iy) {
             float fy = (float)iy;
             __m128 vy = _mm_set_ps1(fy);
-            __m128 cy = map_sse(vy, y_factor, min_y);
+            __m128 cy = map_sse(vy, y_factor, bounds->min_y);
             for (int ix = 0; ix < width; ix += 4){
                 float fx = (float)ix;
                 __m128 vx = _mm_add_ps(_mm_set_ps(3.0f, 2.0f, 1.0f, 0.0f), _mm_set_ps1(fx));
-                __m128 cx = map_sse(vx, x_factor, min_x);
+                __m128 cx = map_sse(vx, x_factor, bounds->min_x);
 
                 union _128i pixels;
                 pixels.v = mandelbrot_sse(cx, cy, max_iter);
@@ -126,8 +140,8 @@ void mandelbrot_driver(int* color_arr, int i_set) {
         #pragma openmp for collapse(2)
         for (int y = 0; y < height; ++y) {
             for (int x = 0; x < width; ++x) {
-                float cx = map(x, 0, width, min_x, max_y);
-                float cy = map(y, 0, height, min_y, max_y);
+                float cx = map(x, 0, width, bounds->min_x, bounds->max_x);
+                float cy = map(y, 0, height, bounds->min_y, bounds->max_y);
                 int iter = mandelbrot(cx, cy, max_iter);
                 color_arr[width*y + x] = iter;
             }
@@ -139,17 +153,29 @@ void mandelbrot_driver(int* color_arr, int i_set) {
     printf("%f\n", time_spent);
 }
 
-void update_display_cfg(double x_min, double x_max, double y_min) {
-    min_x = x_min;
-    max_x = x_max;
-    min_y = y_min;
-    max_y = min_y + (max_x - min_x) * height / width;
-    x_factor = (max_x - min_x) / width;
-    y_factor = (max_y - min_y) / height;
+void update_display_cfg(Bounds_t *bounds) {
+    x_factor = (bounds->max_x - bounds->min_x) / width;
+    y_factor = (bounds->max_y - bounds->min_y) / height;
 }
 
 double map_double(double val, double in_max, double out_min, double out_max) {
     return (val) * (out_max - out_min) / (in_max) + out_min;
+}
+
+void zoom(coord_t mouse_x, coord_t mouse_y, double factor, ZoomDir_t zoom_dir) {
+
+    const double mul = (zoom_dir == ZOOM_IN) ? -1.0f : 1.0f;
+    coord_t min_x = mouse_x + factor * (bounds.min_x + (mouse_x * mul));
+    coord_t max_x = mouse_x + factor * (bounds.max_x + (mouse_x * mul));
+    coord_t min_y = mouse_y + factor * (bounds.min_y + (mouse_y * mul));
+    coord_t max_y = mouse_y + factor * (bounds.max_y + (mouse_y * mul));
+
+    bounds.min_x = min_x;
+    bounds.max_x = max_x;
+    bounds.min_y = min_y;
+    bounds.max_y = max_y;
+    
+    update_display_cfg(&bounds);
 }
 
 int main(int argc, char** argv) {
@@ -185,42 +211,45 @@ int main(int argc, char** argv) {
 
     int* color_arr = malloc(sizeof(int)*width*height);
 
-    SDL_CreateWindowAndRenderer(1440, 1080, 0, &window, &renderer);
+    window = SDL_CreateWindow("mandelbrot", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_RESIZABLE);
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
     SDL_RenderSetLogicalSize(renderer, width, height);
 
-    update_display_cfg(-2.5, 1.5, -1.5);
-    mandelbrot_driver(color_arr, i_set);
+    update_display_cfg(&bounds);
+    mandelbrot_driver(&bounds, color_arr, i_set);
 
     while(1) {
         SDL_RenderPresent(renderer);
 
-        if (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
-                break;
-            }
-            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == 'q') {
-                break;
-            }
-            if(event.type == SDL_MOUSEWHEEL)
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT ||
+                (event.type == SDL_KEYDOWN && event.key.keysym.sym == 'q'))
             {
-                if(event.wheel.y > 0) // scroll up
+                break;
+            }
+            else if (event.type == SDL_WINDOWEVENT_RESIZED)
+            {
+                int w, h;
+                SDL_GetWindowSize(window, &w, &h);
+                width = (double)w;
+                height = (double)h;
+            }
+            else if(event.type == SDL_MOUSEWHEEL)
+            {
+                int x, y;
+                SDL_GetMouseState(&x, &y);
+                coord_t mouse_x = map_double(x, width, bounds.min_x, bounds.max_x);
+                coord_t mouse_y = map_double(y, height, bounds.min_y, bounds.max_y);
+                const double zoom_factor = 0.7;
+                if(event.wheel.y > 0)
                 {
-                    // Put code for handling "scroll up" here!
-                    int x, y;
-                    SDL_GetMouseState(&x, &y);
-                    double dx = map_double(x, width, min_x, max_x);
-                    double dy = map_double(y, height, min_y, max_y);
-                    double x_max_bound = dx + 0.7*(max_x - dx);
-                    double x_min_bound = dx + 0.7*(min_x - dx);
-                    double y_min_bound = dy + 0.7*(min_y - dy);
-                    update_display_cfg(x_min_bound, x_max_bound, y_min_bound);
-                    mandelbrot_driver(color_arr, i_set);
+                    zoom(mouse_x, mouse_y, zoom_factor, ZOOM_IN);
                 }
-                else if(event.wheel.y < 0) // scroll down
+                else if(event.wheel.y < 0)
                 {
-                    // Put code for handling "scroll down" here!
-                    printf("mouse wheel down %d\n", event.wheel.y);
+                    zoom(mouse_x, mouse_y, zoom_factor, ZOOM_OUT);
                 }
+                mandelbrot_driver(&bounds, color_arr, i_set);
             }
         }
 
