@@ -49,14 +49,20 @@ union _256d_4 {
     double  a[4][4];
 };
 
-void color_poly(int n, int iter_max, int* colors) {
+typedef union pixel {
+    uint32_t bgra;
+    uint8_t  a[4];
+} pixel_t;
+
+void color_poly(int n, int iter_max, pixel_t* pixel, int index) {
 	// map n on the 0..1 interval
 	double t = (double)n/(double)iter_max;
 
 	// Use smooth polynomials for r, g, b
-	colors[0] = (int)(9*(1-t)*t*t*t*255);
-	colors[1] = (int)(15*(1-t)*(1-t)*t*t*255);
-	colors[2] =  (int)(8.5*(1-t)*(1-t)*(1-t)*t*255);
+    pixel[index].a[0] = 255; // full alpha
+	pixel[index].a[1] = (int)(9*(1-t)*t*t*t*255); // red
+	pixel[index].a[2] = (int)(15*(1-t)*(1-t)*t*t*255); // green
+	pixel[index].a[3] = (int)(8.5*(1-t)*(1-t)*(1-t)*t*255); // blue
 }
 
 void color(int n, int iter_max, int* colors) {
@@ -85,7 +91,7 @@ is_avx_supported(void)
 }
 #endif // __x86_64__
 
-void mandelbrot_driver(Bounds_t *bounds, int* color_arr, int i_set) {
+void mandelbrot_driver(Bounds_t *bounds, pixel_t* pixels, int i_set) {
     __m256d _3210 = _mm256_set_pd(3.0, 2.0, 1.0, 0.0);
     __m256d _4    = _mm256_set1_pd(4.0);
 
@@ -110,39 +116,39 @@ void mandelbrot_driver(Bounds_t *bounds, int* color_arr, int i_set) {
                 int offset = 0;
                 for (int i = 0; i < 4; i++) {
                     for (int j = 0; j < 4; j++) {
-                        color_arr[width*y + (x+offset++)] = res.a[i][j];
+                        color_poly(res.a[i][j], max_iter, pixels, width*y + (x+offset++));
                     }
                 }
             }
         }
     } else if (i_set == sse) {
-        #pragma openmp for collapse(2)
-        for (int iy = 0; iy < height; ++iy) {
-            float fy = (float)iy;
+        #pragma openmp parallel for schedule(guided)
+        for (int y = 0; y < height; ++y) {
+            float fy = (float)y;
             __m128 vy = _mm_set_ps1(fy);
             __m128 cy = map_sse(vy, y_factor, bounds->min_y);
-            for (int ix = 0; ix < width; ix += 4){
-                float fx = (float)ix;
+            for (int x = 0; x < width; x += 4){
+                float fx = (float)x;
                 __m128 vx = _mm_add_ps(_mm_set_ps(3.0f, 2.0f, 1.0f, 0.0f), _mm_set_ps1(fx));
                 __m128 cx = map_sse(vx, x_factor, bounds->min_x);
 
-                union _128i pixels;
-                pixels.v = mandelbrot_sse(cx, cy, max_iter);
+                union _128i iters;
+                iters.v = mandelbrot_sse(cx, cy, max_iter);
                 for (int i = 0; i < 4; i++) {
-                    color_arr[width*iy + (ix+i)] = pixels.a[i];
+                    color_poly(iters.a[i], max_iter, pixels, width*y + (x+i));
                 }
             }
         }
     }
     #endif // __x86_64__
     else {
-        #pragma openmp for collapse(2)
+        #pragma openmp parallel for schedule(guided)
         for (int y = 0; y < height; ++y) {
             for (int x = 0; x < width; ++x) {
                 float cx = map(x, 0, width, bounds->min_x, bounds->max_x);
                 float cy = map(y, 0, height, bounds->min_y, bounds->max_y);
                 int iter = mandelbrot(cx, cy, max_iter);
-                color_arr[width*y + x] = iter;
+                color_poly(iter, max_iter, pixels, width*y + x);
             }
         }
     }
@@ -206,28 +212,36 @@ int main(int argc, char** argv) {
     SDL_Window*   window;
     SDL_Renderer* renderer;
     SDL_Event     event;
+    SDL_Texture*  texture;
 
-    int* color_arr = malloc(sizeof(int)*width*height);
+    pixel_t* pixels = malloc(sizeof(uint32_t)*width*height);
 
     window = SDL_CreateWindow("mandelbrot", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_RESIZABLE);
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_BGRA8888, SDL_TEXTUREACCESS_STATIC, width, height);
     SDL_RenderSetLogicalSize(renderer, width, height);
 
     update_display_cfg(&bounds);
-    mandelbrot_driver(&bounds, color_arr, i_set);
+    mandelbrot_driver(&bounds, pixels, i_set);
 
-    while(1) {
-        SDL_RenderPresent(renderer);
+    int quit = 0;
+    int x, y, w, h;
+    while(!quit) {
+        SDL_UpdateTexture(texture, NULL, pixels, width * sizeof(uint32_t));
 
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT ||
-                (event.type == SDL_KEYDOWN && event.key.keysym.sym == 'q'))
-            {
+        SDL_WaitEvent(&event);
+
+        switch(event.type) {
+            case SDL_QUIT:
+                quit = 1;
                 break;
-            }
-            else if (event.type == SDL_MOUSEBUTTONDOWN)
-            {
-                int x, y;
+
+            case SDL_KEYDOWN:
+                if (event.key.keysym.sym == 'q')
+                    quit = 1;
+                    break;
+
+            case SDL_MOUSEBUTTONDOWN:
                 SDL_GetMouseState(&x, &y);
 
                 double delta_x = map_double(prev_mouse_x - x, width, bounds.min_x, bounds.max_y);
@@ -241,21 +255,17 @@ int main(int argc, char** argv) {
                 bounds.max_y += delta_y * factor_y;
 
                 update_display_cfg(&bounds);
-                mandelbrot_driver(&bounds, color_arr, i_set);
-
+                mandelbrot_driver(&bounds, pixels, i_set);
+                
                 prev_mouse_x = x;
                 prev_mouse_y = y;
-            }
-            else if (event.type == SDL_WINDOWEVENT_RESIZED)
-            {
-                int w, h;
+
+            case SDL_WINDOWEVENT_RESIZED:
                 SDL_GetWindowSize(window, &w, &h);
                 width = (double)w;
                 height = (double)h;
-            }
-            else if(event.type == SDL_MOUSEWHEEL)
-            {
-                int x, y;
+
+            case SDL_MOUSEWHEEL:
                 SDL_GetMouseState(&x, &y);
                 coord_t mouse_x = map_double(x, width, bounds.min_x, bounds.max_x);
                 coord_t mouse_y = map_double(y, height, bounds.min_y, bounds.max_y);
@@ -267,21 +277,17 @@ int main(int argc, char** argv) {
                 {
                     zoom(mouse_x, mouse_y, ZOOM_OUT);
                 }
-                mandelbrot_driver(&bounds, color_arr, i_set);
-            }
+                mandelbrot_driver(&bounds, pixels, i_set);
         }
 
-        // DRAWING
-        for (int h = 0; h < height; h++) {
-            for (int w = 0; w < width; w++) {
-                int colors[3];
-                color_poly(color_arr[w + (h*width)], max_iter, (void*)&colors);
-                SDL_SetRenderDrawColor(renderer, colors[0], colors[1], colors[2], 255);
-                SDL_RenderDrawPoint(renderer, w, h);
-            }
-        }
+        SDL_RenderClear(renderer);
+        SDL_RenderCopy(renderer, texture, NULL, NULL);
+        SDL_RenderPresent(renderer);
     }
     // Close and destroy the window
+    free(pixels);
+    SDL_DestroyTexture(texture);
+    SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
 
     // Clean up
