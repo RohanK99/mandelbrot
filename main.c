@@ -182,6 +182,11 @@ void zoom(coord_t mouse_x, coord_t mouse_y, ZoomDir_t zoom_dir) {
     update_display_cfg(&bounds);
 }
 
+void screenshot(SDL_Renderer* renderer, SDL_Surface* surface, char* filename) {
+    SDL_RenderReadPixels(renderer, NULL, SDL_PIXELFORMAT_BGRA8888, surface->pixels, surface->pitch);
+    SDL_SaveBMP(surface, filename);
+}
+
 int main(int argc, char** argv) {
 
     // parse options
@@ -213,18 +218,23 @@ int main(int argc, char** argv) {
     SDL_Renderer* renderer;
     SDL_Event     event;
     SDL_Texture*  texture;
+    SDL_Surface*  surface;
 
+    char     filename[64];
     pixel_t* pixels = malloc(sizeof(uint32_t)*width*height);
 
-    window = SDL_CreateWindow("mandelbrot", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_RESIZABLE);
+    window   = SDL_CreateWindow("mandelbrot", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_RESIZABLE);
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_BGRA8888, SDL_TEXTUREACCESS_STATIC, width, height);
+    texture  = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_BGRA8888, SDL_TEXTUREACCESS_STATIC, width, height);
+    surface  = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32, SDL_PIXELFORMAT_BGRA8888);
+
     SDL_RenderSetLogicalSize(renderer, width, height);
 
     update_display_cfg(&bounds);
     mandelbrot_driver(&bounds, pixels, i_set);
 
     int quit = 0;
+    int num_screenshots = 0;
     int x, y, w, h;
     while(!quit) {
         SDL_UpdateTexture(texture, NULL, pixels, width * sizeof(uint32_t));
@@ -237,9 +247,14 @@ int main(int argc, char** argv) {
                 break;
 
             case SDL_KEYDOWN:
-                if (event.key.keysym.sym == 'q')
+                if (event.key.keysym.sym == 'q') {
                     quit = 1;
-                    break;
+                }
+                if (event.key.keysym.sym == 's') {
+                    sprintf(filename, "screenshot(%d).bmp", num_screenshots++);
+                    screenshot(renderer, surface, filename);
+                }
+                break;
 
             case SDL_MOUSEBUTTONDOWN:
                 SDL_GetMouseState(&x, &y);
@@ -286,6 +301,7 @@ int main(int argc, char** argv) {
     }
     // Close and destroy the window
     free(pixels);
+    SDL_FreeSurface(surface);
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
