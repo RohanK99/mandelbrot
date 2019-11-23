@@ -2,6 +2,12 @@
 
 Mandelbrot visualizer built in C with SDL2 utilizing SIMD (AVX, SSE) for speed optimization. Optimization using vectorization, threading, loop unrolling and latency minimization. Colouring done with Bernstein polynomials.
 
+## Build Dependencies
+```
+libsdl2-dev
+libomp-dev
+```
+
 ## Build Steps
 
 ### Release Build
@@ -23,5 +29,5 @@ Usage: `./mandelbrot`
 * `-i` : [A, S], A for AVX, S for SSE, and blank for reference
 
 ### Keyboards Shortcuts
-Key q = Quit program
+Key q = Quit program\
 Key s = Screenshot image
