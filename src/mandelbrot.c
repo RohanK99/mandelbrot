@@ -16,6 +16,6 @@ int mandelbrot(float cx, float cy, int max_iter) {
     return iter;
 }
 
-float map(float val, float in_min, float in_max, float out_min, float out_max) {
+float map_float(float val, float in_min, float in_max, float out_min, float out_max) {
     return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
