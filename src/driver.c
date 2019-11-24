@@ -27,11 +27,11 @@ void mandelbrot_driver(Bounds_t* bounds, pixel_t* pixels, int i_set) {
                                     map_avx(vx2, x_factor, bounds->min_x), map_avx(vx3, x_factor, bounds->min_x)};
 
                 union _256d_4 res = {_mm256_setzero_pd(), _mm256_setzero_pd(), _mm256_setzero_pd(), _mm256_setzero_pd()};
-                mandelbrot_avx(cx, cy, max_iter, res.v);
+                mandelbrot_avx(cx, cy, avx_iter_factor, res.v);
                 int offset = 0;
                 for (int i = 0; i < 4; i++) {
                     for (int j = 0; j < 4; j++) {
-                        color_poly(res.a[i][j], max_iter, pixels, width*y + (x+offset++));
+                        color_poly(res.a[i][j], (8*(6+avx_iter_factor)+2), pixels, width*y + (x+offset++));
                     }
                 }
             }

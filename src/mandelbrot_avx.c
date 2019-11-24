@@ -37,7 +37,7 @@ __m256d map_avx(__m256d vec, double factor, double out_min) {
     return res;
 }
 
-void mandelbrot_avx(__m256d cx[4], __m256d cy[4], int max_iter, __m256d* iters) {
+void mandelbrot_avx(__m256d cx[4], __m256d cy[4], int iter_factor, __m256d* iters) {
     __m256d _4 = _mm256_set1_pd(4.0);
     __m256d _1 = _mm256_set1_pd(1.0);
     __m256d _0 = _mm256_set1_pd(0.0);
@@ -50,7 +50,7 @@ void mandelbrot_avx(__m256d cx[4], __m256d cy[4], int max_iter, __m256d* iters) 
 
     uint32_t cmp_mask = 0;
     
-    for (int iter = 6; iter > 0; --iter) {
+    for (int iter = 6 + iter_factor; iter > 0; --iter) {
         MANDEL_AVX_ITERATION()
         MANDEL_AVX_ITERATION()
         MANDEL_AVX_ITERATION()

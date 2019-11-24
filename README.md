@@ -20,13 +20,14 @@ make -j$(nproc)
 ### Debug Build
 ```bash
 mkdir build-debug && cd build-debug
-cmake ..
+cmake -DCMAKE_BUILD_TYPE=debug ..
 make -j$(nproc)
 ```
 
 ## Running The Program
 Usage: `./mandelbrot`
-* `-i` : [A, S], A for AVX, S for SSE, and blank for reference
+* `-i`: [A, S, R], A for AVX, S for SSE, and R for reference
+* if `-i` is not passed then reference generator is used.
 
 ### Keyboards Shortcuts
 Key q = Quit program\

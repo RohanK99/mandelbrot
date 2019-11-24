@@ -1,10 +1,13 @@
 #include "utils.h"
 
-int height = 800;
-int width = 800;
+int height = 1200;
+int width = 1200;
 int max_iter = 50;
+int avx_iter_factor = 1;
 double x_factor;
 double y_factor;
+
+static int zoom_depth = 0;
 
 void color_poly(int n, int iter_max, pixel_t* pixel, int index) {
 	// map n on the 0..1 interval
@@ -58,4 +61,22 @@ void zoom(coord_t mouse_x, coord_t mouse_y, ZoomDir_t zoom_dir, Bounds_t* bounds
     bounds->max_y = max_y;
     
     update_display_cfg(bounds);
+}
+
+void updateIterations(ZoomDir_t zoom_dir, instruction_set_t i_set) {
+    if (zoom_dir == ZOOM_IN) {
+        if (zoom_depth == 0 && max_iter < 500) {
+            max_iter *= 1.1;
+            avx_iter_factor = max_iter / 8 - 5;
+        } else {
+            zoom_depth++;
+        }
+    } else {
+        if (zoom_depth == 0 && max_iter > 50) {
+            max_iter *= 0.9;
+            avx_iter_factor = max_iter / 8 - 5;
+        } else {
+            zoom_depth--;
+        }
+    }
 }

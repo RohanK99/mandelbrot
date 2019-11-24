@@ -27,11 +27,15 @@ int main(int argc, char** argv) {
                 case 'S':
                     i_set = sse;
                     break;
+                case 'R':
+                    i_set = ref;
                 default:
-                    i_set = def;
-                    break;
+                    exit(EXIT_FAILURE);
             }
             break;
+
+            default:
+                exit(EXIT_FAILURE);
         }
     }
 
@@ -46,7 +50,7 @@ int main(int argc, char** argv) {
     char     filename[64];
     pixel_t* pixels = malloc(sizeof(uint32_t)*width*height);
 
-    window   = SDL_CreateWindow("mandelbrot", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, 0);
+    window   = SDL_CreateWindow("mandelbrot", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_RESIZABLE);
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     texture  = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_BGRA8888, SDL_TEXTUREACCESS_STATIC, width, height);
     surface  = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32, SDL_PIXELFORMAT_BGRA8888);
@@ -100,8 +104,18 @@ int main(int argc, char** argv) {
 
             case SDL_WINDOWEVENT_RESIZED:
                 SDL_GetWindowSize(window, &w, &h);
-                width = (double)w;
-                height = (double)h;
+                width   = (double)w;
+                height  = (double)h;
+
+                SDL_FreeSurface(surface);
+                SDL_DestroyTexture(texture);
+                surface = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32, SDL_PIXELFORMAT_BGRA8888);
+                texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_BGRA8888, SDL_TEXTUREACCESS_STATIC, width, height);
+
+                SDL_RenderSetLogicalSize(renderer, width, height);
+
+                update_display_cfg(&bounds);
+                mandelbrot_driver(&bounds, pixels, i_set);
 
             case SDL_MOUSEWHEEL:
                 SDL_GetMouseState(&x, &y);
@@ -110,10 +124,12 @@ int main(int argc, char** argv) {
                 if(event.wheel.y > 0)
                 {
                     zoom(mouse_x, mouse_y, ZOOM_IN, &bounds);
+                    updateIterations(ZOOM_IN, i_set);
                 }
                 else if(event.wheel.y < 0)
                 {
                     zoom(mouse_x, mouse_y, ZOOM_OUT, &bounds);
+                    updateIterations(ZOOM_OUT, i_set);
                 }
                 mandelbrot_driver(&bounds, pixels, i_set);
         }

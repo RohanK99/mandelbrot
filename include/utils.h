@@ -19,7 +19,7 @@ typedef enum ZoomDir {
 } ZoomDir_t;
 
 typedef enum instruction_set {
-    def,
+    ref,
     avx,
     sse
 } instruction_set_t;
@@ -50,5 +50,7 @@ double map_double(double val, double in_max, double out_min, double out_max);
 void update_display_cfg(Bounds_t* bounds);
 
 void zoom(coord_t mouse_x, coord_t mouse_y, ZoomDir_t zoom_dir, Bounds_t* bounds);
+
+void updateIterations(ZoomDir_t zoom_dir, instruction_set_t i_set);
 
 #endif // UTILS_H

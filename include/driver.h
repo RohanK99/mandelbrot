@@ -6,6 +6,7 @@
 extern int height;
 extern int width;
 extern int max_iter;
+extern int avx_iter_factor;
 extern double x_factor;
 extern double y_factor;
 
